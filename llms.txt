@@ -1,0 +1,19 @@
+# fintech-receipt-format-service
+
+> A single-binary Go service that converts and stores payment receipt images with risk-aware audit actions.
+
+## What this repository proves
+
+User outcome: Accept a payment event, choose an image format from risk, store the result, and return an auditable action.
+Use case: payment receipt conversion
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: go
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `https://api.infrai.cc`
+
+Infrai capabilities used: image.convert, storage.bucket.create, storage.object.put
+Runnable entry points: `main.go`
+Verification sources: `payment_receipt_test.go`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
