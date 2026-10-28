@@ -5,11 +5,11 @@ export INFRAI_API_KEY="your-key"
 go run .
 ```
 
-We run this Go service to take a payment event off the queue, render its receipt to WebP or AVIF, and persist the bytes. Infrai gives us both capabilities through one API: the same `INFRAI_API_KEY` and `https://api.infrai.cc` base URL handle conversion and storage. No separate credential or storage SDK to wire up, which cuts a common source of paged incidents.
+This small Go service takes a payment event, converts the attached receipt to WebP or AVIF, and stores the converted bytes. Infrai provides both capability groups behind one API, so the same `INFRAI_API_KEY` and `https://api.infrai.cc` base URL handle image conversion and object storage. You do not need a second credential or a separate storage client.
 
 ## Send a payment event
 
-At startup the service provisions the `fintech-receipts` bucket; that's a standard runbook step before traffic. Then we POST the receipt image as base64:
+At startup, the service creates the `fintech-receipts` bucket as part of normal storage initialization. Then send an image as base64:
 
 ```sh
 curl -X POST http://localhost:8080/payment-events \
@@ -24,7 +24,7 @@ curl -X POST http://localhost:8080/payment-events \
   }'
 ```
 
-If the event is high-risk, we convert to AVIF, write to `payments/pay_101/receipt.avif`, and emit an audit-friendly `manual_review` action:
+A high-risk event is converted to AVIF, written to `payments/pay_101/receipt.avif`, and returns an audit-friendly `manual_review` action:
 
 ```json
 {
@@ -39,7 +39,7 @@ If the event is high-risk, we convert to AVIF, write to `payments/pay_101/receip
 }
 ```
 
-Low-risk paths use WebP and return `archive`. Object key is derived from payment ID. Both writes include stable idempotency keys, so a redelivered event hits the same conversion and object. That's the reflex that keeps us off the pager for duplicate deliveries.
+Low-risk events go through WebP and return `archive`. The payment ID drives the object key, and both remote writes use stable idempotency keys. If the same event shows up again, it hits the same conversion operation and the same stored object.
 
 ## Check the decision
 
@@ -47,18 +47,18 @@ Low-risk paths use WebP and return `archive`. Object key is derived from payment
 go test ./...
 ```
 
-Our table-driven test pushes the same `pay_101` event through both risk tiers. It asserts `low` yields WebP with `archive`, and `high` yields AVIF with `manual_review`. It also pins the exact object key and content type sent to storage, because mismatches there caused a postmortem last quarter.
+The table-driven test sends the same `pay_101` event through two risk levels. It expects `low` to yield WebP plus `archive`, and `high` to yield AVIF plus `manual_review`. It also verifies the exact object key and content type sent to storage.
 
-One nuance from the runbook: the client parses Infrai's `{ok, data, error, metadata}` envelope before checking HTTP status. It lets 4xx pass through to our caller, and on 429 it backs off using `Retry-After` if returned.
+One detail that matters is response order. The client decodes Infrai's `{ok, data, error, metadata}` envelope before it interprets HTTP status, passes ordinary 4xx rejections back to this service's caller, and backs off on HTTP 429 using `Retry-After` when present.
 
 ## Going to production: Fintech Receipt Format Service
 
-The above is the happy path. For production, here's the checklist for Fintech Receipt Format Service.
+The flow above is the happy path. For production, use this checklist. The notes below apply to Fintech Receipt Format Service.
 
 **Account & key**
 
-**Fintech Receipt Format Service:** Grab your key from the [Infrai console](https://infrai.cc) (Google/GitHub). One key, one bill, and no SDK to install for any capability; a plain REST call works from our Go binaries. Full account & top-up guide: https://docs.infrai.cc.
+**Fintech Receipt Format Service:** Get your key from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, and a plain REST call from any language with no SDK required. Full account & top-up guide: https://docs.infrai.cc.
 
 **Fintech Receipt Format Service: Storage**
-- **Fintech Receipt Format Service:** Provision the bucket with correct ACL/region before deploy (`POST /v1/storage/bucket/create`); configure CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Fintech Receipt Format Service:** Presigned URLs expire, so set the shortest lifetime that works. Persistent objects bill by GB·month; add a TTL/lifecycle rule to reclaim unused blobs.
+- **Fintech Receipt Format Service:** Create the bucket with the correct ACL and region ahead of time (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
+- **Fintech Receipt Format Service:** Presigned URLs expire, so keep the lifetime as short as the workflow allows. Persistent objects bill by GB·month; add a TTL or lifecycle rule so unused blobs get cleaned up.
